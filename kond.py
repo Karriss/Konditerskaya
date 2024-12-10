@@ -56,7 +56,7 @@ class AddConfectionerDialog(QDialog):
         # Create main vertical layout for the dialog
         main_layout = QVBoxLayout()
 
-        # Create a horizontal layout for the name and experience
+        # Create a horizontal layout for the name, experience, and status
         input_layout = QHBoxLayout()
         
         # Create a grid layout to align labels and inputs
@@ -72,11 +72,18 @@ class AddConfectionerDialog(QDialog):
         self.experience_input = QLineEdit()
         self.experience_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         
+        # Status input
+        self.status_label = QLabel("Статус:")
+        self.status_combo = QComboBox()
+        self.load_statuses()  # Load statuses into the combo box
+
         # Add widgets to grid layout
         grid_layout.addWidget(self.name_label)
         grid_layout.addWidget(self.name_input)
         grid_layout.addWidget(self.experience_label)
         grid_layout.addWidget(self.experience_input)
+        grid_layout.addWidget(self.status_label)
+        grid_layout.addWidget(self.status_combo)
         
         # Add grid layout to input layout
         input_layout.addLayout(grid_layout)
@@ -93,10 +100,38 @@ class AddConfectionerDialog(QDialog):
         # Set layout for the dialog
         self.setLayout(main_layout)
 
+    def load_statuses(self):
+        """Loads the statuses into the combo box."""
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='Kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = "SELECT idСтатуса, Статус FROM Статусы"
+                cursor.execute(query)
+                results = cursor.fetchall()
+
+                self.status_combo.clear()
+                for row in results:
+                    self.status_combo.addItem(row[1], userData=row[0])
+
+        except OperationalError as e:
+            logging.error(f"Ошибка загрузки статусов: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки статусов: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+
     def add_confectioner(self):
         """Adds a new confectioner to the database."""
         name = self.name_input.text().strip()
         experience = self.experience_input.text().strip()
+        status_id = self.status_combo.currentData()
 
         if not name:
             QMessageBox.warning(self, "Ошибка ввода", "Пожалуйста, введите ФИО.")
@@ -116,8 +151,8 @@ class AddConfectionerDialog(QDialog):
             )
 
             with connection.cursor() as cursor:
-                query = "INSERT INTO `Кондитеры` (`ФИО`, `Стаж`) VALUES (%s, %s)"
-                cursor.execute(query, (name, experience))
+                query = "INSERT INTO `Кондитеры` (`ФИО`, `Стаж`, `Статус`) VALUES (%s, %s, %s)"
+                cursor.execute(query, (name, experience, status_id))
                 connection.commit()
 
             QMessageBox.information(self, "Успех", "Кондитер успешно добавлен.")
@@ -235,8 +270,8 @@ class ConfectionerTab(QWidget):
 
         # Table to display confectioners
         self.confectioner_table = QTableWidget()
-        self.confectioner_table.setColumnCount(2)  # Remove ID
-        self.confectioner_table.setHorizontalHeaderLabels(["ФИО", "Стаж"])
+        self.confectioner_table.setColumnCount(3)  # Add column for status
+        self.confectioner_table.setHorizontalHeaderLabels(["ФИО", "Стаж", "Статус"])
 
         # Buttons for adding and deleting confectioners
         self.add_button = QPushButton("Добавить кондитера")
@@ -280,7 +315,11 @@ class ConfectionerTab(QWidget):
             )
 
             with connection.cursor() as cursor:
-                query = "SELECT `ФИО`, `Стаж` FROM `Кондитеры`"
+                query = """
+                SELECT Кондитеры.ФИО, Кондитеры.Стаж, Статусы.статус
+                FROM Кондитеры
+                JOIN Статусы ON Кондитеры.Статус = idСтатуса
+                """
                 cursor.execute(query)
                 results = cursor.fetchall()
 
@@ -288,6 +327,7 @@ class ConfectionerTab(QWidget):
                 for row_index, row_data in enumerate(results):
                     self.confectioner_table.setItem(row_index, 0, QTableWidgetItem(row_data[0]))
                     self.confectioner_table.setItem(row_index, 1, QTableWidgetItem(str(row_data[1])))
+                    self.confectioner_table.setItem(row_index, 2, QTableWidgetItem(row_data[2]))
 
         except OperationalError as e:
             logging.error(f"Ошибка загрузки кондитеров: {e}")
@@ -549,7 +589,349 @@ class ProductTab(QWidget):
 
         return delete_product
 
+class OrderTab(QWidget):
+    def __init__(self):
+        super().__init__()
 
+        # Create layout for the tab
+        main_layout = QVBoxLayout()
+
+        # Table to display orders
+        self.order_table = QTableWidget()
+        self.order_table.setColumnCount(8)  # Updated column count
+        self.order_table.setHorizontalHeaderLabels([
+            "Дата Оформления", "Дата Выдачи", "Наименование", "Количество", "Итоговая Цена", "Кондитер", "Заказчик", "Статус"
+        ])
+        self.order_table.horizontalHeader().setStretchLastSection(True)
+        self.order_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.order_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Add table to main layout
+        main_layout.addWidget(self.order_table)
+
+        # Set layout for the tab
+        self.setLayout(main_layout)
+
+        # Load orders from the database
+        self.load_orders()
+
+    def load_orders(self):
+        """Loads the orders from the database into the table."""
+        try:
+            logging.info("Подключение к базе данных для загрузки заказов...")
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='Kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = """
+                SELECT 
+                    заказы.ДатаОформления, 
+                    заказы.ДатаВыдачи, 
+                    Товары.Наименование,
+                    заказы.Количество, 
+                    (заказы.Количество * Товары.Цена) AS ИтоговаяЦена,
+                    COALESCE(Кондитеры.ФИО, '-') AS КондитерФИО,
+                    Заказчик.ФИО AS ЗаказчикФИО,
+                    СтатусыЗаказов.СтатусЗаказа
+                FROM заказы
+                LEFT JOIN Кондитеры ON заказы.Кондитер = Кондитеры.idКондитера
+                JOIN СтатусыЗаказов ON заказы.Статус = СтатусыЗаказов.idСтатусаЗаказа
+                JOIN составзаказа ON заказы.idЗаказа = составзаказа.Заказ
+                JOIN Товары ON составзаказа.Товар = Товары.idТовара
+                JOIN Заказчик ON заказы.Заказчик = Заказчик.idЗаказчика
+                """
+                cursor.execute(query)
+                orders = cursor.fetchall()
+
+            # Clear the table before loading data
+            self.order_table.setRowCount(0)
+
+            # Populate the table with data
+            for row_idx, order in enumerate(orders):
+                self.order_table.insertRow(row_idx)
+
+                # Set order details in the specified order
+                self.order_table.setItem(row_idx, 0, QTableWidgetItem(order[0].strftime("%Y-%m-%d")))
+                self.order_table.setItem(row_idx, 1, QTableWidgetItem(order[1].strftime("%Y-%m-%d")))
+                self.order_table.setItem(row_idx, 2, QTableWidgetItem(order[2]))
+                self.order_table.setItem(row_idx, 3, QTableWidgetItem(str(order[3])))
+                self.order_table.setItem(row_idx, 4, QTableWidgetItem(f"{order[4]:.2f}"))
+                self.order_table.setItem(row_idx, 5, QTableWidgetItem(order[5]))
+                self.order_table.setItem(row_idx, 6, QTableWidgetItem(order[6]))
+
+                # Set status with checkmark or cross
+                status_item = QTableWidgetItem("✔️" if order[7] == "В работе" else "❌" )
+                status_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                self.order_table.setItem(row_idx, 7, status_item)
+
+            logging.info("Загрузка заказов завершена.")
+
+        except pymysql.OperationalError as e:
+            logging.error(f"Ошибка загрузки заказов: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка подключения к базе данных: {e}")
+
+        except Exception as e:
+            logging.error(f"Неизвестная ошибка: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+                logging.info("Соединение закрыто после загрузки заказов.")
+class PlaceOrderTab(QWidget):
+    def __init__(self, order_tab):
+        super().__init__()
+        self.order_tab = order_tab  # Store the reference to order_tab
+
+        # Create layout for the tab
+        main_layout = QVBoxLayout()
+
+        # Customer name input
+        self.customer_name_label = QLabel("ФИО заказчика:")
+        self.customer_name_input = QLineEdit()
+        self.customer_name_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        # Product selection
+        self.product_label = QLabel("Наименование товара:")
+        self.product_combo = QComboBox()
+        self.load_products()
+
+        # Quantity input
+        self.quantity_label = QLabel("Количество:")
+        self.quantity_input = QLineEdit()
+        self.quantity_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.quantity_input.textChanged.connect(self.update_total_price)
+
+        # Order date input
+        self.order_date_label = QLabel("Дата оформления:")
+        self.order_date_input = QLineEdit()
+        self.order_date_input.setPlaceholderText("YYYY-MM-DD")
+
+        # Delivery date input
+        self.delivery_date_label = QLabel("Дата выдачи:")
+        self.delivery_date_input = QLineEdit()
+        self.delivery_date_input.setPlaceholderText("YYYY-MM-DD")
+
+        # Confectioner selection
+        self.confectioner_label = QLabel("Кондитер:")
+        self.confectioner_combo = QComboBox()
+        self.load_confectioners()
+
+        # Total price display
+        self.total_price_label = QLabel("Итоговая цена:")
+        self.total_price_display = QLabel("0.00")
+
+        # Button to place order
+        self.place_order_button = QPushButton("Оформить")
+        self.place_order_button.clicked.connect(self.place_order)
+
+        # Add widgets to layout
+        main_layout.addWidget(self.customer_name_label)
+        main_layout.addWidget(self.customer_name_input)
+        main_layout.addWidget(self.product_label)
+        main_layout.addWidget(self.product_combo)
+        main_layout.addWidget(self.quantity_label)
+        main_layout.addWidget(self.quantity_input)
+        main_layout.addWidget(self.order_date_label)
+        main_layout.addWidget(self.order_date_input)
+        main_layout.addWidget(self.delivery_date_label)
+        main_layout.addWidget(self.delivery_date_input)
+        main_layout.addWidget(self.confectioner_label)
+        main_layout.addWidget(self.confectioner_combo)
+        main_layout.addWidget(self.total_price_label)
+        main_layout.addWidget(self.total_price_display)
+        main_layout.addWidget(self.place_order_button)
+
+        # Set layout for the tab
+        self.setLayout(main_layout)
+    def load_statuses(self):
+        """Loads statuses into the combo box."""
+        self.status_combo.clear()
+        self.status_combo.addItem("-", userData=None)  # Default option for undelivered orders
+
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='Kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = "SELECT idСтатусаЗаказа, СтатусЗаказа FROM СтатусыЗаказов"
+                cursor.execute(query)
+                results = cursor.fetchall()
+
+                for row in results:
+                    self.status_combo.addItem(row[1], userData=row[0])
+
+        except OperationalError as e:
+            logging.error(f"Ошибка загрузки статусов: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки статусов: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+    def load_products(self):
+        """Loads products into the combo box."""
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='Kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = "SELECT idТовара, Наименование, Цена FROM Товары"
+                cursor.execute(query)
+                results = cursor.fetchall()
+
+                self.product_combo.clear()
+                for row in results:
+                    self.product_combo.addItem(f"{row[1]} ({row[2]} руб.)", userData=(row[0], row[2]))
+
+        except OperationalError as e:
+            logging.error(f"Ошибка загрузки товаров: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки товаров: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+
+    def load_confectioners(self):
+        """Loads confectioners into the combo box."""
+        self.confectioner_combo.clear()
+        self.confectioner_combo.addItem("-", userData=None)  # Default option for unassigned orders
+
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='Kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = "SELECT idКондитера, ФИО FROM Кондитеры"
+                cursor.execute(query)
+                results = cursor.fetchall()
+
+                for row in results:
+                    self.confectioner_combo.addItem(row[1], userData=row[0])
+
+        except OperationalError as e:
+            logging.error(f"Ошибка загрузки кондитеров: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки кондитеров: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+
+    def update_total_price(self):
+        """Updates the total price based on the selected product and quantity."""
+        try:
+            product_data = self.product_combo.currentData()
+            quantity = self.quantity_input.text().strip()
+
+            if product_data and quantity.isdigit():
+                price = product_data[1]
+                total_price = int(quantity) * price
+                self.total_price_display.setText(f"{total_price:.2f}")
+            else:
+                self.total_price_display.setText("0.00")
+        except Exception as e:
+            logging.error(f"Ошибка обновления итоговой цены: {e}")
+
+    def place_order(self):
+        """Places a new order in the database."""
+        customer_name = self.customer_name_input.text().strip()
+        product_data = self.product_combo.currentData()
+        quantity = self.quantity_input.text().strip()
+        order_date = self.order_date_input.text().strip()
+        delivery_date = self.delivery_date_input.text().strip()
+        confectioner_id = self.confectioner_combo.currentData()
+
+        # Determine the status based on whether a confectioner is selected
+        status_id = 1 if confectioner_id else 2  # 1 for "Выдан", 2 for "Не выдан"
+
+        if not customer_name:
+            QMessageBox.warning(self, "Ошибка ввода", "Пожалуйста, введите ФИО заказчика.")
+            return
+
+        if not quantity.isdigit():
+            QMessageBox.warning(self, "Ошибка ввода", "Количество должно быть числом.")
+            return
+
+        if not order_date or not delivery_date:
+            QMessageBox.warning(self, "Ошибка ввода", "Пожалуйста, введите даты оформления и выдачи.")
+            return
+
+        try:
+            logging.info("Подключение к базе данных для оформления заказа...")
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='Kond'
+            )
+
+            with connection.cursor() as cursor:
+                # Insert customer if not exists
+                cursor.execute("SELECT idЗаказчика FROM Заказчик WHERE ФИО = %s", (customer_name,))
+                customer = cursor.fetchone()
+                if not customer:
+                    cursor.execute("INSERT INTO Заказчик (ФИО) VALUES (%s)", (customer_name,))
+                    customer_id = cursor.lastrowid
+                else:
+                    customer_id = customer[0]
+
+                # Insert order
+                cursor.execute(
+                    "INSERT INTO заказы (ДатаОформления, ДатаВыдачи, Количество, Кондитер, Заказчик, Статус) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (order_date, delivery_date, quantity, confectioner_id, customer_id, status_id)
+                )
+                order_id = cursor.lastrowid
+
+                # Insert order composition
+                cursor.execute(
+                    "INSERT INTO составзаказа (Товар, Заказ) VALUES (%s, %s)",
+                    (product_data[0], order_id)
+                )
+
+                connection.commit()
+
+            QMessageBox.information(self, "Успех", "Заказ успешно оформлен.")
+            self.clear_inputs()
+
+            # Refresh the orders tab
+            self.order_tab.load_orders()
+
+        except OperationalError as e:
+            logging.error(f"Ошибка оформления заказа: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка оформления заказа: {e}")
+
+        except Exception as e:
+            logging.error(f"Неизвестная ошибка: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+                logging.info("Соединение закрыто после оформления заказа.")
+
+    def clear_inputs(self):
+        """Clears the input fields after placing an order."""
+        self.customer_name_input.clear()
+        self.quantity_input.clear()
+        self.order_date_input.clear()
+        self.delivery_date_input.clear()
+        self.total_price_display.setText("0.00")
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -557,19 +939,20 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Менеджер компании")
 
-        # Используем кастомный виджет вкладок
+        # Используем пользовательский виджет вкладок
         self.tabs = VerticalQTabWidget()
 
         # Создаем вкладки
         self.confectioner_tab = ConfectionerTab()
-        # Добавьте другие вкладки, если они есть
         self.product_tab = ProductTab()
-        # self.sales_tab = SalesTab()
+        self.order_tab = OrderTab()
+        self.place_order_tab = PlaceOrderTab(self.order_tab)  # Передаем order_tab в PlaceOrderTab
 
+        # Добавляем вкладки в виджет вкладок
         self.tabs.addTab(self.confectioner_tab, "Кондитеры")
-        # Добавьте другие вкладки, если они есть
         self.tabs.addTab(self.product_tab, "Товары")
-        # self.tabs.addTab(self.sales_tab, "Продажи")
+        self.tabs.addTab(self.order_tab, "Текущие заказы")
+        self.tabs.addTab(self.place_order_tab, "Оформить заказ")
 
         # Устанавливаем центральный виджет
         self.setCentralWidget(self.tabs)
@@ -577,8 +960,67 @@ class MainWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    
+    # Set the application style to 'Fusion'
+    app.setStyle('Fusion')
+
+    # Apply a custom stylesheet
+    app.setStyleSheet("""
+        QMainWindow {
+            background-color: #f5f5f5;
+        }
+        QTabWidget::pane {
+            border: 1px solid #b0b0b0;
+            background-color: #ffffff;
+        }
+        QTabBar::tab {
+            background: #e8e8e8;
+            border: 1px solid #b0b0b0;
+            padding: 12px;
+            margin: 3px;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        QTabBar::tab:selected {
+            background: #d0d0d0;
+            font-weight: bold;
+            color: #333333;
+        }
+        QTabBar::tab:hover {
+            background: #c8c8c8;
+        }
+        QPushButton {
+            background-color: #d0d0d0;
+            border: 1px solid #a0a0a0;
+            padding: 6px;
+            border-radius: 4px;
+        }
+        QPushButton:hover {
+            background-color: #c0c0c0;
+        }
+        QLabel {
+            font-size: 15px;
+            color: #333333;
+        }
+        QLineEdit, QComboBox {
+            border: 1px solid #a0a0a0;
+            padding: 6px;
+            border-radius: 4px;
+        }
+        QTableWidget {
+            gridline-color: #b0b0b0;
+            background-color: #ffffff;
+        }
+        QHeaderView::section {
+            background-color: #d0d0d0;
+            border: 1px solid #a0a0a0;
+            padding: 6px;
+            font-weight: bold;
+        }
+    """)
+
     window = MainWindow()
-    window.showMaximized()  # Открываем приложение на весь экран
+    window.showMaximized()  # Open the application in full screen
     sys.exit(app.exec())
 
 if __name__ == "__main__":
