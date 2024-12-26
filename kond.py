@@ -1,15 +1,25 @@
 import sys
 import logging
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QComboBox,QDialog, QHBoxLayout,QSizePolicy,
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QLabel, QComboBox,QDialog, QHBoxLayout,QSizePolicy,QHeaderView,
     QLineEdit, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem, QTabWidget, QTabBar, QStylePainter, QStyleOptionTab, QStyleOptionTabWidgetFrame, QStyle
 )
 import pymysql
 from pymysql import OperationalError
 from PyQt6 import QtCore
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from datetime import datetime
+from PyQt6.QtGui import QFont
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import random
+from transliterate import translit
 logging.basicConfig(level=logging.INFO)
-db_user = "Aimor"
-db_password = "Alex25122005"
+pdfmetrics.registerFont(TTFont('Arial', 'Arial.ttf'))
+
+db_user = "root"
+db_password = "Karina"
 
 
 class VerticalQTabWidget(QTabWidget):
@@ -17,6 +27,7 @@ class VerticalQTabWidget(QTabWidget):
         super(VerticalQTabWidget, self).__init__()
         self.setTabBar(VerticalQTabBar())
         self.setTabPosition(QTabWidget.TabPosition.West)
+        self.setFont(QFont("Arial", 10))  
 
     def paintEvent(self, event):
         painter = QStylePainter(self)
@@ -29,6 +40,8 @@ class VerticalQTabBar(QTabBar):
     def __init__(self, *args, **kwargs):
         super(VerticalQTabBar, self).__init__(*args, **kwargs)
         self.setElideMode(QtCore.Qt.TextElideMode.ElideNone)
+        pdfmetrics.registerFont(TTFont('Arial', 'Arial.ttf'))
+        self.setFont(QFont("Arial", 10)) 
 
     def tabSizeHint(self, index):
         size_hint = super(VerticalQTabBar, self).tabSizeHint(index)
@@ -48,6 +61,139 @@ class VerticalQTabBar(QTabBar):
             painter.drawControl(QStyle.ControlElement.CE_TabBarTabShape, option)
             option.shape = QTabBar.Shape.RoundedNorth
             painter.drawControl(QStyle.ControlElement.CE_TabBarTabLabel, option)
+class LoginDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Вход в систему")
+
+        # Set a larger size for the dialog
+        self.setMinimumSize(800, 600)  # Minimum size of 800x600 pixels
+
+        # Create main layout
+        main_layout = QVBoxLayout()
+        main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)  # Center the layout
+
+        # Create a widget to hold the form layout
+        form_widget = QWidget()
+        form_layout = QVBoxLayout(form_widget)
+        form_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)  # Center the form
+
+        # Add a label for the title
+        self.Vhod_label = QLabel("Вход в учетную запись")
+        self.Vhod_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)  # Center the text
+        self.Vhod_label.setStyleSheet("font-size: 18px; font-weight: bold;")  # Optional: style the label
+        form_layout.addWidget(self.Vhod_label)
+
+        # Username input
+        self.username_input = QLineEdit()
+        self.username_input.setPlaceholderText("логин")  # Set placeholder text
+        self.username_input.setMinimumWidth(220)  # Set maximum width to 220 pixels
+        form_layout.addWidget(self.username_input, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # Password input
+        self.password_input = QLineEdit()
+        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setPlaceholderText("пароль")  # Set placeholder text
+        self.password_input.setMinimumWidth(220)  # Set maximum width to 220 pixels
+        form_layout.addWidget(self.password_input, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # Login button
+        self.login_button = QPushButton("Войти")
+        self.login_button.setMinimumWidth(120)  # Set maximum width to 220 pixels
+        self.login_button.clicked.connect(self.authenticate)
+        form_layout.addWidget(self.login_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # Add form widget to the main layout
+        main_layout.addWidget(form_widget)
+        self.setLayout(main_layout)
+
+        # Apply custom styles
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f0f8ff;  /* Alice blue background */
+                border-radius: 10px;
+                padding: 20px;
+            }
+            QLabel {
+                font-size: 14px;
+                color: #333333;
+            }
+            QLineEdit {
+                border: 1px solid #a0a0a0;
+                padding: 8px;
+                border-radius: 5px;
+                background-color: #e6e6fa;  /* Soft lavender */
+            }
+            QPushButton {
+                background-color: #FF69B4;  /* Thistle color */
+                border: 1px solid #a0a0a0;
+                padding: 10px;
+                border-radius: 5px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            QPushButton:hover {
+                background-color: #dda0dd;  /* Plum color */
+            }
+        """)
+
+
+    def authenticate(self):
+        username = self.username_input.text().strip()
+        password = self.password_input.text().strip()
+
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                # Check if the user is an admin
+                if username == "Karina" and password == "123":
+                    self.accept()  # Close dialog with success
+                    self.role = "Админ"
+                    return
+
+                # Check if the user is a confectioner
+                query = "SELECT Логин, Пароль FROM Пользователи WHERE Логин = %s AND Пароль = %s"
+                cursor.execute(query, (username, password))
+                result = cursor.fetchone()
+
+                if result:
+                    self.accept()  # Close dialog with success
+                    self.role = "Кондитер"
+                else:
+                    QMessageBox.warning(self, "Ошибка", "Неверные учетные данные.")
+
+        except OperationalError as e:
+            logging.error(f"Ошибка подключения к базе данных: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка подключения к базе данных: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+class ConfectionerWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Кондитерский интерфейс")
+
+        # Use the custom tab widget
+        self.tabs = VerticalQTabWidget()
+
+        # Create tabs with the role 'Кондитер'
+        self.confectioner_tab = ConfectionerTab(role="Кондитер")
+        self.completed_orders_tab = CompletedOrdersTab()
+        self.order_tab = OrderTab(self.completed_orders_tab)
+
+        # Add only the necessary tabs to the tab widget
+        self.tabs.addTab(self.order_tab, "Текущие заказы")
+        self.tabs.addTab(self.confectioner_tab, "Кондитеры")
+
+        # Set the central widget
+        self.setCentralWidget(self.tabs)
 class AddConfectionerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -99,7 +245,6 @@ class AddConfectionerDialog(QDialog):
 
         # Set layout for the dialog
         self.setLayout(main_layout)
-
     def load_statuses(self):
         """Loads the statuses into the combo box."""
         try:
@@ -107,7 +252,7 @@ class AddConfectionerDialog(QDialog):
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
@@ -126,7 +271,18 @@ class AddConfectionerDialog(QDialog):
         finally:
             if 'connection' in locals():
                 connection.close()
+    def generate_login(self, name):
+        """Generates a login based on the full name, transliterated to English."""
+        # Transliterate the name to English
+        transliterated_name = translit(name, 'ru', reversed=True)
+        parts = transliterated_name.split()
+        if len(parts) >= 2:
+            return parts[0][0].lower() + parts[1].lower()
+        return transliterated_name.lower()
 
+    def generate_password(self):
+        """Generates a random 4-digit password."""
+        return ''.join(random.choices('0123456789', k=4))
     def add_confectioner(self):
         """Adds a new confectioner to the database."""
         name = self.name_input.text().strip()
@@ -141,21 +297,31 @@ class AddConfectionerDialog(QDialog):
             QMessageBox.warning(self, "Ошибка ввода", "Стаж должен быть числом.")
             return
 
+        login = self.generate_login(name)
+        password = self.generate_password()
+
         try:
             logging.info("Подключение к базе данных для добавления кондитера...")
             connection = pymysql.connect(
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
+                # Insert confectioner
                 query = "INSERT INTO `Кондитеры` (`ФИО`, `Стаж`, `Статус`) VALUES (%s, %s, %s)"
                 cursor.execute(query, (name, experience, status_id))
+                confectioner_id = cursor.lastrowid
+
+                # Insert user
+                query = "INSERT INTO `Пользователи` (`Логин`, `Пароль`, `Кондитер`) VALUES (%s, %s, %s)"
+                cursor.execute(query, (login, password, confectioner_id))
+
                 connection.commit()
 
-            QMessageBox.information(self, "Успех", "Кондитер успешно добавлен.")
+            QMessageBox.information(self, "Успех", f"Кондитер успешно добавлен.\nЛогин: {login}\nПароль: {password}")
             self.parent().load_confectioners()  # Refresh the table after adding
             self.accept()  # Close the dialog
 
@@ -209,7 +375,7 @@ class DeleteConfectionerDialog(QDialog):
                 host='127.0.0.1', 
                 user=db_user, 
                 password=db_password, 
-                database='Kond' 
+                database='kond' 
             ) 
  
             with connection.cursor() as cursor: 
@@ -229,62 +395,200 @@ class DeleteConfectionerDialog(QDialog):
             if 'connection' in locals(): 
                 connection.close() 
  
-    def delete_confectioner(self): 
-        """Deletes the selected confectioner from the database.""" 
-        confectioner_id = self.confectioner_combo.currentData() 
-        if confectioner_id is not None: 
-            try: 
-                connection = pymysql.connect( 
-                    host='127.0.0.1', 
-                    user=db_user, 
-                    password=db_password, 
-                    database='Kond' 
-                ) 
- 
-                with connection.cursor() as cursor: 
-                    query = "DELETE FROM Кондитеры WHERE idКондитера = %s" 
-                    cursor.execute(query, (confectioner_id,)) 
-                    connection.commit() 
- 
-                QMessageBox.information(self, "Успех", "Кондитер успешно удален.") 
-                self.parent().load_confectioners()  # Refresh the table after deletion 
-                self.accept()  # Close the dialog 
- 
-            except OperationalError as e: 
-                logging.error(f"Ошибка удаления кондитера: {e}") 
-                QMessageBox.critical(self, "Ошибка", f"Ошибка удаления кондитера: {e}") 
- 
-            finally: 
-                if 'connection' in locals(): 
-                    connection.close() 
-        else: 
-            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите кондитера для удаления.")
+    def delete_confectioner(self):
+        """Deletes the selected confectioner from the database."""
+        confectioner_id = self.confectioner_combo.currentData()
+        if confectioner_id is not None:
+            try:
+                connection = pymysql.connect(
+                    host='127.0.0.1',
+                    user=db_user,
+                    password=db_password,
+                    database='kond'
+                )
 
+                with connection.cursor() as cursor:
+                    # Check for references in the 'заказы' table
+                    query = """
+                    SELECT COUNT(*) FROM заказы
+                    WHERE Кондитер = %s
+                    """
+                    cursor.execute(query, (confectioner_id,))
+                    count = cursor.fetchone()[0]
+
+                    if count > 0:
+                        QMessageBox.warning(self, "Ошибка", "Невозможно удалить кондитера, так как он связан с другими записями.")
+                        return
+
+                    # Proceed with deletion if no references are found
+                    query = "DELETE FROM Кондитеры WHERE idКондитера = %s"
+                    cursor.execute(query, (confectioner_id,))
+                    connection.commit()
+
+                QMessageBox.information(self, "Успех", "Кондитер успешно удален.")
+                self.parent().load_confectioners()  # Refresh the table after deletion
+                self.accept()  # Close the dialog
+
+            except OperationalError as e:
+                logging.error(f"Ошибка удаления кондитера: {e}")
+                QMessageBox.critical(self, "Ошибка", f"Ошибка удаления кондитера: {e}")
+
+            finally:
+                if 'connection' in locals():
+                    connection.close()
+        else:
+            QMessageBox.warning(self, "Ошибка", "Пожалуйста, выберите кондитера для удаления.")
+class EditConfectionerDialog(QDialog):
+    def __init__(self, confectioner_id, name, experience, status_id, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Редактировать кондитера")
+        self.confectioner_id = confectioner_id
+
+        # Create main layout
+        main_layout = QVBoxLayout()
+
+        # Name input
+        self.name_label = QLabel("ФИО:")
+        self.name_input = QLineEdit(name)
+        self.name_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        # Experience input
+        self.experience_label = QLabel("Стаж:")
+        self.experience_input = QLineEdit(str(experience))
+        self.experience_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        # Status input
+        self.status_label = QLabel("Статус:")
+        self.status_combo = QComboBox()
+        self.load_statuses(status_id)
+
+        # Add widgets to layout
+        main_layout.addWidget(self.name_label)
+        main_layout.addWidget(self.name_input)
+        main_layout.addWidget(self.experience_label)
+        main_layout.addWidget(self.experience_input)
+        main_layout.addWidget(self.status_label)
+        main_layout.addWidget(self.status_combo)
+
+        # Save button
+        self.save_button = QPushButton("Сохранить")
+        self.save_button.clicked.connect(self.save_confectioner)
+        main_layout.addWidget(self.save_button)
+
+        # Set layout
+        self.setLayout(main_layout)
+
+    def load_statuses(self, current_status_id):
+        """Loads the statuses into the combo box and sets the current status."""
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = "SELECT idСтатуса, Статус FROM Статусы"
+                cursor.execute(query)
+                results = cursor.fetchall()
+
+                self.status_combo.clear()
+                for row in results:
+                    self.status_combo.addItem(row[1], userData=row[0])
+                    if row[0] == current_status_id:
+                        self.status_combo.setCurrentIndex(self.status_combo.count() - 1)
+
+        except OperationalError as e:
+            logging.error(f"Ошибка загрузки статусов: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка загрузки статусов: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+
+    def save_confectioner(self):
+        """Saves the edited confectioner details to the database."""
+        new_name = self.name_input.text().strip()
+        new_experience = self.experience_input.text().strip()
+        new_status_id = self.status_combo.currentData()
+
+        if not new_name:
+            QMessageBox.warning(self, "Ошибка ввода", "Пожалуйста, введите ФИО.")
+            return
+
+        if not new_experience.isdigit():
+            QMessageBox.warning(self, "Ошибка ввода", "Стаж должен быть числом.")
+            return
+
+        try:
+            logging.info("Подключение к базе данных для обновления кондитера...")
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = """
+                UPDATE `Кондитеры`
+                SET `ФИО` = %s, `Стаж` = %s, `Статус` = %s
+                WHERE `idКондитера` = %s
+                """
+                cursor.execute(query, (new_name, new_experience, new_status_id, self.confectioner_id))
+                connection.commit()
+
+            QMessageBox.information(self, "Успех", "Кондитер успешно обновлен.")
+            self.accept()  # Close the dialog
+
+        except OperationalError as e:
+            logging.error(f"Ошибка обновления кондитера: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка обновления кондитера: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+                logging.info("Соединение закрыто после обновления кондитера.")
 class ConfectionerTab(QWidget):
-    def __init__(self):
+    def __init__(self, role):
         super().__init__()
 
-        # Create layout for the tab
-        main_layout = QVBoxLayout()
-        button_layout = QHBoxLayout()
+        # Create main horizontal layout for the tab
+        main_layout = QHBoxLayout()
 
         # Table to display confectioners
         self.confectioner_table = QTableWidget()
         self.confectioner_table.setColumnCount(3)  # Add column for status
         self.confectioner_table.setHorizontalHeaderLabels(["ФИО", "Стаж", "Статус"])
+        self.confectioner_table.horizontalHeader().setStretchLastSection(True)
+        self.confectioner_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.confectioner_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.confectioner_table.cellDoubleClicked.connect(self.open_edit_confectioner_dialog)
+        # Adjust column widths for better proportions
+        self.confectioner_table.setColumnWidth(0, 800)  # ФИО
+        self.confectioner_table.setColumnWidth(1, 200)  # Стаж
+        self.confectioner_table.setColumnWidth(2, 150)  # Статус
 
-        # Buttons for adding and deleting confectioners
-        self.add_button = QPushButton("Добавить кондитера")
-        self.add_button.clicked.connect(self.show_add_confectioner_dialog)
+        # Create a vertical layout for buttons
+        button_layout = QVBoxLayout()
 
-        self.delete_button = QPushButton("Удалить кондитера")
-        self.delete_button.clicked.connect(self.show_delete_confectioner_dialog)
+        # Add buttons only if the user is an admin
+        if role == "Админ":
+            # Buttons for adding and deleting confectioners
+            self.add_button = QPushButton("Добавить кондитера")
+            self.add_button.clicked.connect(self.show_add_confectioner_dialog)
 
-        # Add buttons to button layout
-        button_layout.addWidget(self.add_button)
-        button_layout.addWidget(self.delete_button)
+            self.delete_button = QPushButton("Удалить кондитера")
+            self.delete_button.clicked.connect(self.show_delete_confectioner_dialog)
 
-        # Add widgets to main layout
+            # Add buttons to button layout
+            button_layout.addWidget(self.add_button)
+            button_layout.addWidget(self.delete_button)
+
+        button_layout.addStretch()  # Add stretch to push buttons to the top
+
+        # Add table and button layout to main layout
         main_layout.addWidget(self.confectioner_table)
         main_layout.addLayout(button_layout)
 
@@ -293,7 +597,16 @@ class ConfectionerTab(QWidget):
 
         # Load data
         self.load_confectioners()
+    def open_edit_confectioner_dialog(self, row, column):
+        """Opens the dialog to edit a confectioner."""
+        confectioner_id = self.confectioner_table.item(row, 0).data(QtCore.Qt.ItemDataRole.UserRole)
+        name = self.confectioner_table.item(row, 0).text()
+        experience = self.confectioner_table.item(row, 1).text()
+        status = self.confectioner_table.item(row, 2).data(QtCore.Qt.ItemDataRole.UserRole)
 
+        dialog = EditConfectionerDialog(confectioner_id, name, experience, status, self)
+        if dialog.exec():
+            self.load_confectioners()  
     def show_add_confectioner_dialog(self):
         """Shows the dialog to add a new confectioner."""
         dialog = AddConfectionerDialog(self)
@@ -311,7 +624,7 @@ class ConfectionerTab(QWidget):
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
@@ -347,7 +660,7 @@ class ConfectionerTab(QWidget):
                     host='127.0.0.1',
                     user=db_user,
                     password=db_password,
-                    database='Kond'
+                    database='kond'
                 )
 
                 with connection.cursor() as cursor:
@@ -434,7 +747,7 @@ class AddProductDialog(QDialog):
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
@@ -462,8 +775,29 @@ class ProductTab(QWidget):
     def __init__(self):
         super().__init__()
 
-        # Create layout for the tab
+        # Create main vertical layout for the tab
         main_layout = QVBoxLayout()
+
+        # Create horizontal layout for search input and buttons
+        search_and_button_layout = QHBoxLayout()
+
+        # Search input
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Поиск товаров...")
+        self.search_input.textChanged.connect(self.filter_products)
+
+        # Button to add a product
+        self.add_product_button = QPushButton("Добавить товар")
+        self.add_product_button.clicked.connect(self.open_add_product_dialog)
+
+        # Button to generate report
+        self.report_button = QPushButton("Сформировать отчет")
+        self.report_button.clicked.connect(self.generate_report)
+
+        # Add search input and buttons to the horizontal layout
+        search_and_button_layout.addWidget(self.search_input)
+        search_and_button_layout.addWidget(self.add_product_button)
+        search_and_button_layout.addWidget(self.report_button)
 
         # Table to display products
         self.product_table = QTableWidget()
@@ -473,22 +807,37 @@ class ProductTab(QWidget):
         self.product_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.product_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
-        # Add table to main layout
+        # Connect double-click event to open edit dialog
+        self.product_table.cellDoubleClicked.connect(self.open_edit_product_dialog)
+
+        # Adjust column widths
+        header = self.product_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+
+        # Add horizontal layout and table to main layout
+        main_layout.addLayout(search_and_button_layout)
         main_layout.addWidget(self.product_table)
-
-        # Button to add a product
-        self.add_product_button = QPushButton("Добавить товар")
-        self.add_product_button.clicked.connect(self.open_add_product_dialog)
-
-        # Add button to main layout
-        main_layout.addWidget(self.add_product_button)
 
         # Set layout for the tab
         self.setLayout(main_layout)
 
         # Load products from the database
         self.load_products()
+    def on_tab_changed(self, index):
+        """Reload products when the tab is changed to the ProductTab."""
+        # Get the QTabWidget parent
+        tab_widget = self.parentWidget()
+        if tab_widget and tab_widget.currentWidget() == self:
+            self.load_products()
+    def open_edit_product_dialog(self, row, column):
+        """Opens the dialog to edit a product."""
+        product_name = self.product_table.item(row, 0).text()
+        price = self.product_table.item(row, 1).text()
+        quantity = self.product_table.item(row, 2).text()
 
+        dialog = EditProductDialog(product_name, price, quantity, self)
+        if dialog.exec():
+            self.load_products()  # Reload products after editing
     def open_add_product_dialog(self):
         """Открывает диалог для добавления товара."""
         dialog = AddProductDialog(self)
@@ -503,33 +852,15 @@ class ProductTab(QWidget):
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
                 query = "SELECT `Наименование`, `Цена`, `Количество` FROM `Товары`"
                 cursor.execute(query)
-                products = cursor.fetchall()
+                self.products = cursor.fetchall()  # Store products for filtering
 
-            # Очистка таблицы перед загрузкой данных
-            self.product_table.setRowCount(0)
-
-            # Заполнение таблицы данными
-            for row_idx, product in enumerate(products):
-                self.product_table.insertRow(row_idx)
-
-                # Установить наименование
-                self.product_table.setItem(row_idx, 0, QTableWidgetItem(product[0]))
-
-                # Установить цену
-                self.product_table.setItem(row_idx, 1, QTableWidgetItem(str(product[1])))
-                self.product_table.setItem(row_idx, 2, QTableWidgetItem(str(product[2]))) 
-
-                # Добавить кнопку удаления
-                delete_button = QPushButton("❌")
-                delete_button.setToolTip(f"Удалить {product[0]}")
-                delete_button.clicked.connect(self._create_delete_handler(product[0]))
-                self.product_table.setCellWidget(row_idx, 3, delete_button)
+            self.display_products(self.products)
 
             logging.info("Загрузка товаров завершена.")
 
@@ -546,26 +877,61 @@ class ProductTab(QWidget):
                 connection.close()
                 logging.info("Соединение закрыто после загрузки товаров.")
 
+    def display_products(self, products):
+        """Displays the given list of products in the table."""
+        self.product_table.setRowCount(0)  # Clear the table
+
+        for row_idx, product in enumerate(products):
+            self.product_table.insertRow(row_idx)
+
+            # Set product details
+            self.product_table.setItem(row_idx, 0, QTableWidgetItem(product[0]))
+            self.product_table.setItem(row_idx, 1, QTableWidgetItem(str(product[1])))
+            self.product_table.setItem(row_idx, 2, QTableWidgetItem(str(product[2])))
+
+            # Add delete button
+            delete_button = QPushButton("❌")
+            delete_button.setToolTip(f"Удалить {product[0]}")
+            delete_button.clicked.connect(self._create_delete_handler(product[0]))
+            self.product_table.setCellWidget(row_idx, 3, delete_button)
+
+    def filter_products(self):
+        """Filters the products based on the search input."""
+        search_query = self.search_input.text().lower()
+        filtered_products = [product for product in self.products if search_query in product[0].lower()]
+        self.display_products(filtered_products)
+
     def _create_delete_handler(self, product_name):
         """Создает обработчик для удаления конкретного товара."""
         def delete_product():
-            confirm = QMessageBox.question(
-                self,
-                "Подтверждение",
-                f"Вы уверены, что хотите удалить товар '{product_name}'?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
+            try:
+                logging.info(f"Проверка ссылок на товар '{product_name}' перед удалением...")
+                connection = pymysql.connect(
+                    host='127.0.0.1',
+                    user=db_user,
+                    password=db_password,
+                    database='kond'
+                )
 
-            if confirm == QMessageBox.StandardButton.Yes:
-                try:
-                    logging.info(f"Удаление товара '{product_name}' из базы данных...")
-                    connection = pymysql.connect(
-                        host='127.0.0.1',
-                        user=db_user,
-                        password=db_password,
-                        database='Kond'
-                    )
+                with connection.cursor() as cursor:
+                    # Check if the product is referenced in составзаказа
+                    query = "SELECT COUNT(*) FROM составзаказа WHERE Товар = (SELECT idТовара FROM Товары WHERE Наименование = %s)"
+                    cursor.execute(query, (product_name,))
+                    count = cursor.fetchone()[0]
 
+                    if count > 0:
+                        QMessageBox.warning(self, "Ошибка", f"Товар '{product_name}' не может быть удален, так как он используется в заказах.")
+                        return
+
+                # Proceed with deletion if no references are found
+                confirm = QMessageBox(self)
+                confirm.setWindowTitle("Подтверждение")
+                confirm.setText(f"Вы уверены, что хотите удалить товар '{product_name}'?")
+                confirm.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+                confirm.button(QMessageBox.StandardButton.Yes).setText("Да")
+                confirm.button(QMessageBox.StandardButton.No).setText("Нет")
+
+                if confirm.exec() == QMessageBox.StandardButton.Yes:
                     with connection.cursor() as cursor:
                         query = "DELETE FROM `Товары` WHERE `Наименование` = %s"
                         cursor.execute(query, (product_name,))
@@ -574,31 +940,95 @@ class ProductTab(QWidget):
                     QMessageBox.information(self, "Успех", f"Товар '{product_name}' успешно удален.")
                     self.load_products()  # Обновление таблицы после удаления
 
-                except pymysql.OperationalError as e:
-                    logging.error(f"Ошибка удаления товара: {e}")
-                    QMessageBox.critical(self, "Ошибка", f"Ошибка удаления товара: {e}")
+            except pymysql.OperationalError as e:
+                logging.error(f"Ошибка удаления товара: {e}")
+                QMessageBox.critical(self, "Ошибка", f"Ошибка удаления товара: {e}")
 
-                except Exception as e:
-                    logging.error(f"Неизвестная ошибка: {e}")
-                    QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
+            except Exception as e:
+                logging.error(f"Неизвестная ошибка: {e}")
+                QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
 
-                finally:
-                    if 'connection' in locals():
-                        connection.close()
-                        logging.info("Соединение закрыто после удаления товара.")
+            finally:
+                if 'connection' in locals():
+                    connection.close()
+                    logging.info("Соединение закрыто после удаления товара.")
 
         return delete_product
+    def generate_report(self, *args):
+        """Generates a PDF report of completed orders for the current month."""
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond',
+                charset='utf8mb4'  # Ensure the database connection uses the correct charset
+            )
 
+            with connection.cursor() as cursor:
+                # Get the current month and year
+                current_month = datetime.now().month
+                current_year = datetime.now().year
+
+                # Query to get completed orders for the current month
+                query = """
+                SELECT 
+                    Товары.Наименование,
+                    SUM(заказы.Количество) AS КоличествоПроданных,
+                    SUM(заказы.Количество * Товары.Цена) AS ИтоговаяЦена
+                FROM заказы
+                JOIN СтатусыЗаказов ON заказы.Статус = СтатусыЗаказов.idСтатусаЗаказа
+                JOIN составзаказа ON заказы.idЗаказа = составзаказа.Заказ
+                JOIN Товары ON составзаказа.Товар = Товары.idТовара
+                WHERE СтатусыЗаказов.СтатусЗаказа = 'выполнен'
+                AND MONTH(заказы.ДатаОформления) = %s
+                AND YEAR(заказы.ДатаОформления) = %s
+                GROUP BY Товары.Наименование
+                """
+                cursor.execute(query, (current_month, current_year))
+                completed_orders = cursor.fetchall()
+
+            # Generate PDF
+            pdf_filename = f"Отчет_завершенные_заказы_{current_year}_{current_month}.pdf"
+            c = canvas.Canvas(pdf_filename, pagesize=letter)
+            c.setFont("Arial", 12)  # Use the registered TrueType font
+            c.drawString(100, 750, f"Отчет по завершенным заказам за {current_month}/{current_year}")
+
+            y_position = 720
+            for order in completed_orders:
+                order_details = f"Наименование: {order[0]}, Количество: {order[1]}, Итоговая Цена: {order[2]:.2f}"
+                c.drawString(100, y_position, order_details)
+                y_position -= 20
+                if y_position < 50:
+                    c.showPage()
+                    y_position = 750
+
+            c.save()
+            logging.info(f"Report generated: {pdf_filename}")
+            QMessageBox.information(self, "Успех", f"Отчет успешно сформирован: {pdf_filename}")
+
+        except pymysql.OperationalError as e:
+            logging.error(f"Ошибка генерации отчета: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка генерации отчета: {e}")
+
+        except Exception as e:
+            logging.error(f"Неизвестная ошибка: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
 class OrderTab(QWidget):
-    def __init__(self):
+    def __init__(self, completed_orders_tab):
         super().__init__()
+        self.completed_orders_tab = completed_orders_tab  # Store the reference
 
         # Create layout for the tab
         main_layout = QVBoxLayout()
 
         # Table to display orders
         self.order_table = QTableWidget()
-        self.order_table.setColumnCount(8)  # Updated column count
+        self.order_table.setColumnCount(8)
         self.order_table.setHorizontalHeaderLabels([
             "Дата Оформления", "Дата Выдачи", "Наименование", "Количество", "Итоговая Цена", "Кондитер", "Заказчик", "Статус"
         ])
@@ -608,12 +1038,61 @@ class OrderTab(QWidget):
 
         # Add table to main layout
         main_layout.addWidget(self.order_table)
-
+        self.order_table.setColumnWidth(0, 150)
         # Set layout for the tab
         self.setLayout(main_layout)
 
         # Load orders from the database
         self.load_orders()
+
+    def mark_order_completed(self, order_id):
+        """Marks the order as completed and moves it to the completed orders tab."""
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                # Log the order ID
+                logging.info(f"Updating order ID: {order_id}")
+
+                # Check if the status 'Завершен' exists
+                cursor.execute("SELECT idСтатусаЗаказа FROM СтатусыЗаказов WHERE СтатусЗаказа = 'выполнен'")
+                result = cursor.fetchone()
+                if not result:
+                    raise ValueError("Status 'Завершен' does not exist in СтатусыЗаказов table.")
+
+                status_id = result[0]
+                logging.info(f"Status ID for 'Завершен': {status_id}")
+
+                # Update the order status to 'Completed'
+                query = "UPDATE заказы SET Статус = %s WHERE idЗаказа = %s"
+                cursor.execute(query, (status_id, order_id))
+                connection.commit()
+
+            QMessageBox.information(self, "Успех", "Заказ успешно завершен.")
+            self.load_orders()  # Refresh the current orders tab
+
+            # Check if completed_orders_tab is not None before calling load_completed_orders
+            if self.completed_orders_tab is not None:
+                self.completed_orders_tab.load_completed_orders()
+            else:
+                logging.error("CompletedOrdersTab is not initialized.")
+
+        except pymysql.OperationalError as e:
+            logging.error(f"Ошибка обновления статуса заказа: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка обновления статуса заказа: {e}")
+
+        except Exception as e:
+            logging.error(f"Неизвестная ошибка: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
 
     def load_orders(self):
         """Loads the orders from the database into the table."""
@@ -623,12 +1102,13 @@ class OrderTab(QWidget):
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
                 query = """
                 SELECT 
+                    заказы.idЗаказа,
                     заказы.ДатаОформления, 
                     заказы.ДатаВыдачи, 
                     Товары.Наименование,
@@ -643,6 +1123,7 @@ class OrderTab(QWidget):
                 JOIN составзаказа ON заказы.idЗаказа = составзаказа.Заказ
                 JOIN Товары ON составзаказа.Товар = Товары.idТовара
                 JOIN Заказчик ON заказы.Заказчик = Заказчик.idЗаказчика
+                WHERE СтатусыЗаказов.СтатусЗаказа = 'В работе'
                 """
                 cursor.execute(query)
                 orders = cursor.fetchall()
@@ -655,18 +1136,19 @@ class OrderTab(QWidget):
                 self.order_table.insertRow(row_idx)
 
                 # Set order details in the specified order
-                self.order_table.setItem(row_idx, 0, QTableWidgetItem(order[0].strftime("%Y-%m-%d")))
-                self.order_table.setItem(row_idx, 1, QTableWidgetItem(order[1].strftime("%Y-%m-%d")))
-                self.order_table.setItem(row_idx, 2, QTableWidgetItem(order[2]))
-                self.order_table.setItem(row_idx, 3, QTableWidgetItem(str(order[3])))
-                self.order_table.setItem(row_idx, 4, QTableWidgetItem(f"{order[4]:.2f}"))
-                self.order_table.setItem(row_idx, 5, QTableWidgetItem(order[5]))
-                self.order_table.setItem(row_idx, 6, QTableWidgetItem(order[6]))
+                self.order_table.setItem(row_idx, 0, QTableWidgetItem(order[1].strftime("%Y-%m-%d")))
+                self.order_table.setItem(row_idx, 1, QTableWidgetItem(order[2].strftime("%Y-%m-%d")))
+                self.order_table.setItem(row_idx, 2, QTableWidgetItem(order[3]))
+                self.order_table.setItem(row_idx, 3, QTableWidgetItem(str(order[4])))
+                self.order_table.setItem(row_idx, 4, QTableWidgetItem(f"{order[5]:.2f}"))
+                self.order_table.setItem(row_idx, 5, QTableWidgetItem(order[6]))
+                self.order_table.setItem(row_idx, 6, QTableWidgetItem(order[7]))
 
-                # Set status with checkmark or cross
-                status_item = QTableWidgetItem("✔️" if order[7] == "В работе" else "❌" )
-                status_item.setTextAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-                self.order_table.setItem(row_idx, 7, status_item)
+                # Add a button to change the status
+                status_button = QPushButton("✔️")
+                status_button.setToolTip("Mark as completed")
+                status_button.clicked.connect(lambda _, order_id=order[0]: self.mark_order_completed(order_id))
+                self.order_table.setCellWidget(row_idx, 7, status_button)
 
             logging.info("Загрузка заказов завершена.")
 
@@ -682,54 +1164,105 @@ class OrderTab(QWidget):
             if 'connection' in locals():
                 connection.close()
                 logging.info("Соединение закрыто после загрузки заказов.")
+    def mark_order_completed(self, order_id):
+        """Marks the order as completed and moves it to the completed orders tab."""
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                # Log the order ID
+                logging.info(f"Updating order ID: {order_id}")
+
+                # Check if the status 'Завершен' exists
+                cursor.execute("SELECT idСтатусаЗаказа FROM СтатусыЗаказов WHERE СтатусЗаказа = 'выполнен'")
+                result = cursor.fetchone()
+                if not result:
+                    raise ValueError("Status 'Завершен' does not exist in СтатусыЗаказов table.")
+
+                status_id = result[0]
+                logging.info(f"Status ID for 'Завершен': {status_id}")
+
+                # Update the order status to 'Completed'
+                query = "UPDATE заказы SET Статус = %s WHERE idЗаказа = %s"
+                cursor.execute(query, (status_id, order_id))
+                connection.commit()
+
+            QMessageBox.information(self, "Успех", "Заказ успешно завершен.")
+            self.load_orders()  # Refresh the current orders tab
+            self.completed_orders_tab.load_completed_orders()  # Refresh the completed orders tab
+
+        except pymysql.OperationalError as e:
+            logging.error(f"Ошибка обновления статуса заказа: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка обновления статуса заказа: {e}")
+
+        except Exception as e:
+            logging.error(f"Неизвестная ошибка: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+
 class PlaceOrderTab(QWidget):
     def __init__(self, order_tab):
         super().__init__()
-        self.order_tab = order_tab  # Store the reference to order_tab
+        self.order_tab = order_tab  # Сохраняем ссылку на order_tab
 
-        # Create layout for the tab
+        # Создаем основной вертикальный макет
         main_layout = QVBoxLayout()
 
-        # Customer name input
+        # Устанавливаем фиксированную ширину для полей ввода
+        input_width = 300
+
+        # Поле ввода ФИО заказчика
         self.customer_name_label = QLabel("ФИО заказчика:")
         self.customer_name_input = QLineEdit()
-        self.customer_name_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.customer_name_input.setFixedWidth(input_width)
 
-        # Product selection
+        # Выбор товара
         self.product_label = QLabel("Наименование товара:")
         self.product_combo = QComboBox()
+        self.product_combo.setFixedWidth(input_width)
         self.load_products()
+        self.product_combo.currentIndexChanged.connect(self.update_total_price)  # Connect signal
 
-        # Quantity input
+        # Поле ввода количества
         self.quantity_label = QLabel("Количество:")
         self.quantity_input = QLineEdit()
-        self.quantity_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.quantity_input.setFixedWidth(input_width)
         self.quantity_input.textChanged.connect(self.update_total_price)
 
-        # Order date input
+
+        # Поле ввода даты оформления
         self.order_date_label = QLabel("Дата оформления:")
         self.order_date_input = QLineEdit()
-        self.order_date_input.setPlaceholderText("YYYY-MM-DD")
-
-        # Delivery date input
+        self.order_date_input.setFixedWidth(input_width)
+        self.order_date_input.setInputMask("00.00.0000")  # Set input mask for dd.mm.yyyy
+        self.order_date_input.setText(datetime.now().strftime("%d.%m.%Y"))  # Set default to current date
+        # Поле ввода даты выдачи
         self.delivery_date_label = QLabel("Дата выдачи:")
         self.delivery_date_input = QLineEdit()
-        self.delivery_date_input.setPlaceholderText("YYYY-MM-DD")
+        self.delivery_date_input.setFixedWidth(input_width)
+        self.delivery_date_input.setInputMask("00.00.0000")  # Set input mask for dd.mm.yyyy
+        self.delivery_date_input.setText(datetime.now().strftime("%d.%m.%Y"))  # Set default to current date
 
-        # Confectioner selection
+        # Выбор кондитера
         self.confectioner_label = QLabel("Кондитер:")
         self.confectioner_combo = QComboBox()
+        self.confectioner_combo.setFixedWidth(input_width)
         self.load_confectioners()
 
-        # Total price display
+        # Отображение итоговой цены
         self.total_price_label = QLabel("Итоговая цена:")
         self.total_price_display = QLabel("0.00")
+        self.total_price_display.setFixedWidth(input_width)
 
-        # Button to place order
-        self.place_order_button = QPushButton("Оформить")
-        self.place_order_button.clicked.connect(self.place_order)
-
-        # Add widgets to layout
+        # Добавляем виджеты в основной макет
         main_layout.addWidget(self.customer_name_label)
         main_layout.addWidget(self.customer_name_input)
         main_layout.addWidget(self.product_label)
@@ -744,21 +1277,36 @@ class PlaceOrderTab(QWidget):
         main_layout.addWidget(self.confectioner_combo)
         main_layout.addWidget(self.total_price_label)
         main_layout.addWidget(self.total_price_display)
-        main_layout.addWidget(self.place_order_button)
 
-        # Set layout for the tab
+        # Создаем горизонтальный макет для кнопки
+        button_layout = QHBoxLayout()
+        button_layout.addStretch()  # Добавляем растяжимое пространство слева
+
+        # Увеличиваем размер кнопки и добавляем ее в макет
+        self.place_order_button = QPushButton("Оформить")
+        self.place_order_button.setFixedSize(170, 75)  # Устанавливаем размер кнопки
+        self.place_order_button.clicked.connect(self.place_order)
+        button_layout.addWidget(self.place_order_button)
+        button_layout.addStretch()  # Добавляем растяжимое пространство справа
+
+        # Добавляем макет кнопки в основной макет
+        main_layout.addLayout(button_layout)
+
+        # Добавляем растяжимое пространство для поднятия кнопки выше
+        main_layout.addStretch()
+
+        # Устанавливаем основной макет для вкладки
         self.setLayout(main_layout)
     def load_statuses(self):
         """Loads statuses into the combo box."""
         self.status_combo.clear()
-        self.status_combo.addItem("-", userData=None)  # Default option for undelivered orders
 
         try:
             connection = pymysql.connect(
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
@@ -783,7 +1331,7 @@ class PlaceOrderTab(QWidget):
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
@@ -806,14 +1354,14 @@ class PlaceOrderTab(QWidget):
     def load_confectioners(self):
         """Loads confectioners into the combo box."""
         self.confectioner_combo.clear()
-        self.confectioner_combo.addItem("-", userData=None)  # Default option for unassigned orders
+
 
         try:
             connection = pymysql.connect(
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
@@ -856,6 +1404,14 @@ class PlaceOrderTab(QWidget):
         delivery_date = self.delivery_date_input.text().strip()
         confectioner_id = self.confectioner_combo.currentData()
 
+        # Convert dates from dd.mm.yyyy to yyyy-mm-dd for database storage
+        try:
+            order_date_db = datetime.strptime(order_date, "%d.%m.%Y").strftime("%Y-%m-%d")
+            delivery_date_db = datetime.strptime(delivery_date, "%d.%m.%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            QMessageBox.warning(self, "Ошибка ввода", "Неверный формат даты. Используйте дд.мм.гггг.")
+            return
+
         # Determine the status based on whether a confectioner is selected
         status_id = 1 if confectioner_id else 2  # 1 for "Выдан", 2 for "Не выдан"
 
@@ -867,20 +1423,25 @@ class PlaceOrderTab(QWidget):
             QMessageBox.warning(self, "Ошибка ввода", "Количество должно быть числом.")
             return
 
-        if not order_date or not delivery_date:
-            QMessageBox.warning(self, "Ошибка ввода", "Пожалуйста, введите даты оформления и выдачи.")
-            return
-
         try:
             logging.info("Подключение к базе данных для оформления заказа...")
             connection = pymysql.connect(
                 host='127.0.0.1',
                 user=db_user,
                 password=db_password,
-                database='Kond'
+                database='kond'
             )
 
             with connection.cursor() as cursor:
+                # Check available stock
+                product_id = product_data[0]
+                cursor.execute("SELECT Количество FROM Товары WHERE idТовара = %s", (product_id,))
+                available_quantity = cursor.fetchone()[0]
+
+                if int(quantity) > available_quantity:
+                    QMessageBox.warning(self, "Ошибка", "Недостаточно товара на складе.")
+                    return
+
                 # Insert customer if not exists
                 cursor.execute("SELECT idЗаказчика FROM Заказчик WHERE ФИО = %s", (customer_name,))
                 customer = cursor.fetchone()
@@ -894,14 +1455,21 @@ class PlaceOrderTab(QWidget):
                 cursor.execute(
                     "INSERT INTO заказы (ДатаОформления, ДатаВыдачи, Количество, Кондитер, Заказчик, Статус) "
                     "VALUES (%s, %s, %s, %s, %s, %s)",
-                    (order_date, delivery_date, quantity, confectioner_id, customer_id, status_id)
+                    (order_date_db, delivery_date_db, quantity, confectioner_id, customer_id, status_id)
                 )
                 order_id = cursor.lastrowid
 
                 # Insert order composition
                 cursor.execute(
                     "INSERT INTO составзаказа (Товар, Заказ) VALUES (%s, %s)",
-                    (product_data[0], order_id)
+                    (product_id, order_id)
+                )
+
+                # Update stock quantity
+                new_quantity = available_quantity - int(quantity)
+                cursor.execute(
+                    "UPDATE Товары SET Количество = %s WHERE idТовара = %s",
+                    (new_quantity, product_id)
                 )
 
                 connection.commit()
@@ -909,8 +1477,9 @@ class PlaceOrderTab(QWidget):
             QMessageBox.information(self, "Успех", "Заказ успешно оформлен.")
             self.clear_inputs()
 
-            # Refresh the orders tab
+            # Refresh the orders tab and product list
             self.order_tab.load_orders()
+            self.load_products()
 
         except OperationalError as e:
             logging.error(f"Ошибка оформления заказа: {e}")
@@ -932,96 +1501,404 @@ class PlaceOrderTab(QWidget):
         self.order_date_input.clear()
         self.delivery_date_input.clear()
         self.total_price_display.setText("0.00")
+class EditProductDialog(QDialog):
+    def __init__(self, product_name, price, quantity, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Редактировать товар")
 
+        # Store the original product name to identify the product in the database
+        self.original_product_name = product_name
+
+        # Create main layout
+        main_layout = QVBoxLayout()
+
+        # Name input
+        self.name_label = QLabel("Наименование:")
+        self.name_input = QLineEdit(product_name)
+        self.name_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        # Price input
+        self.price_label = QLabel("Цена:")
+        self.price_input = QLineEdit(str(price))
+        self.price_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        # Quantity input
+        self.quantity_label = QLabel("Количество:")
+        self.quantity_input = QLineEdit(str(quantity))
+        self.quantity_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        # Add widgets to layout
+        main_layout.addWidget(self.name_label)
+        main_layout.addWidget(self.name_input)
+        main_layout.addWidget(self.price_label)
+        main_layout.addWidget(self.price_input)
+        main_layout.addWidget(self.quantity_label)
+        main_layout.addWidget(self.quantity_input)
+
+        # Save button
+        self.save_button = QPushButton("Сохранить")
+        self.save_button.clicked.connect(self.save_product)
+        main_layout.addWidget(self.save_button)
+
+        # Set layout
+        self.setLayout(main_layout)
+
+    def save_product(self):
+        """Saves the edited product details to the database."""
+        new_name = self.name_input.text().strip()
+        new_price = self.price_input.text().strip()
+        new_quantity = self.quantity_input.text().strip()
+
+        if not new_name:
+            QMessageBox.warning(self, "Ошибка ввода", "Пожалуйста, введите наименование.")
+            return
+
+        if not new_price.isdigit():
+            QMessageBox.warning(self, "Ошибка ввода", "Цена должна быть числом.")
+            return
+
+        if not new_quantity.isdigit():
+            QMessageBox.warning(self, "Ошибка ввода", "Количество должно быть числом.")
+            return
+
+        try:
+            logging.info("Подключение к базе данных для обновления товара...")
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = """
+                UPDATE `Товары`
+                SET `Наименование` = %s, `Цена` = %s, `Количество` = %s
+                WHERE `Наименование` = %s
+                """
+                cursor.execute(query, (new_name, new_price, new_quantity, self.original_product_name))
+                connection.commit()
+
+            QMessageBox.information(self, "Успех", "Товар успешно обновлен.")
+            self.accept()  # Close the dialog
+
+        except OperationalError as e:
+            logging.error(f"Ошибка обновления товара: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка обновления товара: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+                logging.info("Соединение закрыто после обновления товара.")
+class CompletedOrdersTab(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        # Create layout for the tab
+        main_layout = QVBoxLayout()
+
+        # Table to display completed orders
+        self.completed_order_table = QTableWidget()
+        self.completed_order_table.setColumnCount(8)
+        self.completed_order_table.setHorizontalHeaderLabels([
+            "Дата Оформления", "Дата Выдачи", "Наименование", "Количество", "Итоговая Цена", "Кондитер", "Заказчик", "Статус"
+        ])
+        self.completed_order_table.horizontalHeader().setStretchLastSection(True)
+        self.completed_order_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.completed_order_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Connect double-click event
+        self.completed_order_table.cellDoubleClicked.connect(self.open_delete_order_dialog)
+
+        # Add table to main layout
+        main_layout.addWidget(self.completed_order_table)
+        self.completed_order_table.setColumnWidth(0, 150)
+        # Set layout for the tab
+        self.setLayout(main_layout)
+
+        # Load completed orders from the database
+        self.load_completed_orders()
+    def open_delete_order_dialog(self, row, column):
+        """Opens the dialog to confirm deletion of a completed order."""
+        order_id = self.completed_order_table.item(row, 0).data(QtCore.Qt.ItemDataRole.UserRole)
+        dialog = DeleteCompletedOrderDialog(order_id, self)
+        if dialog.exec():
+            self.load_completed_orders()
+    def load_completed_orders(self):
+        """Loads the completed orders from the database into the table."""
+        try:
+            logging.info("Подключение к базе данных для загрузки завершенных заказов...")
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                query = """
+                SELECT 
+                    заказы.idЗаказа,
+                    заказы.ДатаОформления, 
+                    заказы.ДатаВыдачи, 
+                    Товары.Наименование,
+                    заказы.Количество, 
+                    (заказы.Количество * Товары.Цена) AS ИтоговаяЦена,
+                    COALESCE(Кондитеры.ФИО, '-') AS КондитерФИО,
+                    Заказчик.ФИО AS ЗаказчикФИО,
+                    СтатусыЗаказов.СтатусЗаказа
+                FROM заказы
+                LEFT JOIN Кондитеры ON заказы.Кондитер = Кондитеры.idКондитера
+                JOIN СтатусыЗаказов ON заказы.Статус = СтатусыЗаказов.idСтатусаЗаказа
+                JOIN составзаказа ON заказы.idЗаказа = составзаказа.Заказ
+                JOIN Товары ON составзаказа.Товар = Товары.idТовара
+                JOIN Заказчик ON заказы.Заказчик = Заказчик.idЗаказчика
+                WHERE заказы.Статус = 2
+                """
+                cursor.execute(query)
+                completed_orders = cursor.fetchall()
+
+            # Clear the table before loading data
+            self.completed_order_table.setRowCount(0)
+
+            # Populate the table with data
+            for row_idx, order in enumerate(completed_orders):
+                self.completed_order_table.insertRow(row_idx)
+
+                # Store order ID as user data in the first column
+                item = QTableWidgetItem(order[1].strftime("%Y-%m-%d"))
+                item.setData(QtCore.Qt.ItemDataRole.UserRole, order[0])
+                self.completed_order_table.setItem(row_idx, 0, item)
+
+                self.completed_order_table.setItem(row_idx, 1, QTableWidgetItem(order[2].strftime("%Y-%m-%d")))
+                self.completed_order_table.setItem(row_idx, 2, QTableWidgetItem(order[3]))
+                self.completed_order_table.setItem(row_idx, 3, QTableWidgetItem(str(order[4])))
+                self.completed_order_table.setItem(row_idx, 4, QTableWidgetItem(f"{order[5]:.2f}"))
+                self.completed_order_table.setItem(row_idx, 5, QTableWidgetItem(order[6]))
+                self.completed_order_table.setItem(row_idx, 6, QTableWidgetItem(order[7]))
+
+                # Add a cross icon to indicate completion
+                status_label = QLabel("❌")
+                status_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
+                self.completed_order_table.setCellWidget(row_idx, 7, status_label)
+
+            logging.info("Загрузка завершенных заказов завершена.")
+
+        except pymysql.OperationalError as e:
+            logging.error(f"Ошибка загрузки завершенных заказов: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка подключения к базе данных: {e}")
+
+        except Exception as e:
+            logging.error(f"Неизвестная ошибка: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Неизвестная ошибка: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
+                logging.info("Соединение закрыто после загрузки завершенных заказов.")
+class DeleteCompletedOrderDialog(QDialog):
+    def __init__(self, order_id, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Удалить завершенный заказ")
+        self.order_id = order_id
+
+        # Create main layout
+        main_layout = QVBoxLayout()
+
+        # Confirmation message
+        self.confirm_label = QLabel("Вы уверены, что хотите удалить этот завершенный заказ?")
+        main_layout.addWidget(self.confirm_label)
+
+        # Delete button
+        self.delete_button = QPushButton("Удалить")
+        self.delete_button.clicked.connect(self.delete_order)
+        main_layout.addWidget(self.delete_button)
+
+        # Set layout
+        self.setLayout(main_layout)
+
+    def delete_order(self):
+        """Deletes the completed order from the database."""
+        try:
+            connection = pymysql.connect(
+                host='127.0.0.1',
+                user=db_user,
+                password=db_password,
+                database='kond'
+            )
+
+            with connection.cursor() as cursor:
+                # First, delete related records in the `составзаказа` table
+                query = "DELETE FROM составзаказа WHERE Заказ = %s"
+                cursor.execute(query, (self.order_id,))
+
+                # Now, delete the order itself
+                query = "DELETE FROM заказы WHERE idЗаказа = %s"
+                cursor.execute(query, (self.order_id,))
+                connection.commit()
+
+            QMessageBox.information(self, "Успех", "Завершенный заказ успешно удален.")
+            self.accept()  # Close the dialog
+
+        except OperationalError as e:
+            logging.error(f"Ошибка удаления завершенного заказа: {e}")
+            QMessageBox.critical(self, "Ошибка", f"Ошибка удаления завершенного заказа: {e}")
+
+        finally:
+            if 'connection' in locals():
+                connection.close()
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
         self.setWindowTitle("Менеджер компании")
 
-        # Используем пользовательский виджет вкладок
+        # Use the custom tab widget
         self.tabs = VerticalQTabWidget()
 
-        # Создаем вкладки
-        self.confectioner_tab = ConfectionerTab()
-        self.product_tab = ProductTab()
-        self.order_tab = OrderTab()
-        self.place_order_tab = PlaceOrderTab(self.order_tab)  # Передаем order_tab в PlaceOrderTab
-
-        # Добавляем вкладки в виджет вкладок
+        # Create tabs with the role 'Админ'
+        self.confectioner_tab = ConfectionerTab(role="Админ")
+        self.completed_orders_tab = CompletedOrdersTab()
+        self.order_tab = OrderTab(self.completed_orders_tab)
+        self.place_order_tab = PlaceOrderTab(self.order_tab)
+        self.Product_tab = ProductTab()
+        # Add tabs to the tab widget
         self.tabs.addTab(self.confectioner_tab, "Кондитеры")
-        self.tabs.addTab(self.product_tab, "Товары")
         self.tabs.addTab(self.order_tab, "Текущие заказы")
+        self.tabs.addTab(self.completed_orders_tab, "Завершенные заказы")
         self.tabs.addTab(self.place_order_tab, "Оформить заказ")
-
-        # Устанавливаем центральный виджет
+        self.tabs.addTab(self.Product_tab, "Товары")
+        # Set the central widget
         self.setCentralWidget(self.tabs)
+class WelcomeDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Добро пожаловать")
+        self.role = None  # Initialize the role attribute
 
+        # Set a larger size for the dialog
+        self.setMinimumSize(800, 600)  # Minimum size of 800x600 pixels
 
+        # Create main layout
+        main_layout = QVBoxLayout()
+        main_layout.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)  # Center the layout
+
+        # Add a label for the title
+        self.title_label = QLabel("Учет заказов на кондитерской фабрике")
+        self.title_label.setAlignment(QtCore.Qt.AlignmentFlag.AlignHCenter)  # Center the text
+        self.title_label.setStyleSheet("font-size: 24px; font-weight: bold; margin-top: 200px;")  # Add top margin
+        main_layout.addWidget(self.title_label)
+
+        # Add a button for entering
+        self.enter_button = QPushButton("Вход")
+        self.enter_button.setFixedSize(150, 50)  # Set size for the button
+        self.enter_button.clicked.connect(self.open_login_dialog)
+        main_layout.addWidget(self.enter_button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
+
+        # Set layout for the dialog
+        self.setLayout(main_layout)
+
+        # Apply custom styles
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #f0f8ff;  /* Alice blue background */
+                border-radius: 10px;
+                padding: 20px;
+            }
+            QLabel {
+                font-size: 18px;
+                color: #333333;
+            }
+            QPushButton {
+                background-color: #FF69B4;  /* Thistle color */
+                border: 1px solid #a0a0a0;
+                padding: 10px;
+                border-radius: 5px;
+                font-weight: bold;
+                color: #ffffff;
+            }
+            QPushButton:hover {
+                background-color: #dda0dd;  /* Plum color */
+            }
+        """)
+
+    def open_login_dialog(self):
+        """Open the login dialog when the button is clicked."""
+        login_dialog = LoginDialog(self)
+        if login_dialog.exec() == QDialog.DialogCode.Accepted:
+            self.role = login_dialog.role  
+            self.accept()  
 def main():
     app = QApplication(sys.argv)
-    
-    # Set the application style to 'Fusion'
     app.setStyle('Fusion')
 
-    # Apply a custom stylesheet
-    app.setStyleSheet("""
-        QMainWindow {
-            background-color: #f5f5f5;
-        }
-        QTabWidget::pane {
-            border: 1px solid #b0b0b0;
-            background-color: #ffffff;
-        }
-        QTabBar::tab {
-            background: #e8e8e8;
-            border: 1px solid #b0b0b0;
-            padding: 12px;
-            margin: 3px;
-            border-radius: 5px;
-            font-size: 14px;
-        }
-        QTabBar::tab:selected {
-            background: #d0d0d0;
-            font-weight: bold;
-            color: #333333;
-        }
-        QTabBar::tab:hover {
-            background: #c8c8c8;
-        }
-        QPushButton {
-            background-color: #d0d0d0;
-            border: 1px solid #a0a0a0;
-            padding: 6px;
-            border-radius: 4px;
-        }
-        QPushButton:hover {
-            background-color: #c0c0c0;
-        }
-        QLabel {
-            font-size: 15px;
-            color: #333333;
-        }
-        QLineEdit, QComboBox {
-            border: 1px solid #a0a0a0;
-            padding: 6px;
-            border-radius: 4px;
-        }
-        QTableWidget {
-            gridline-color: #b0b0b0;
-            background-color: #ffffff;
-        }
-        QHeaderView::section {
-            background-color: #d0d0d0;
-            border: 1px solid #a0a0a0;
-            padding: 6px;
-            font-weight: bold;
-        }
-    """)
+    welcome_dialog = WelcomeDialog()
+    if welcome_dialog.exec() == QDialog.DialogCode.Accepted:
+        role = welcome_dialog.role
 
-    window = MainWindow()
-    window.showMaximized()  # Open the application in full screen
-    sys.exit(app.exec())
+        if role == "Админ":
+            window = MainWindow()  # Full admin interface
+        else:
+            window = ConfectionerWindow()  # Limited confectioner interface
+
+        # Apply a custom stylesheet with reversed soft blue and soft purple colors
+        app.setStyleSheet("""
+            QMainWindow {
+                background-color: #f0f8ff;  /* Alice blue background */
+            }
+            QTabWidget::pane {
+                border: 1px solid #b0b0b0;
+                background-color: #FFFACD;  /* Soft lavender background */
+            }
+            QTabBar::tab {
+                background: #b0c4de;  /* Light steel blue */
+                border: 1px solid #b0b0b0;
+                padding: 12px;
+                margin: 3px;
+                border-radius: 5px;
+                font-size: 14px;
+            }
+            QTabBar::tab:selected {
+                background: #FFC0CB;  /* Thistle color */
+                font-weight: bold;
+                color: #ffffff;
+            }
+            QTabBar::tab:hover {
+                background: #dda0dd;  /* Plum color */
+            }
+            QPushButton {
+                background-color: #FF69B4;  /* Thistle color */
+                border: 1px solid #a0a0a0;
+                padding: 6px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #dda0dd;  /* Plum color */
+            }
+            QLabel {
+                font-size: 15px;
+                color: #333333;
+            }
+            QLineEdit, QComboBox {
+                border: 1px solid #a0a0a0;
+                padding: 6px;
+                border-radius: 4px;
+                background-color: #e6e6fa;  /* Soft lavender */
+            }
+            QTableWidget {
+                gridline-color: #b0b0b0;
+                background-color: #ffffff;
+            }
+            QHeaderView::section {
+                background-color: #d8bfd8;  /* Thistle color */
+                border: 1px solid #a0a0a0;
+                padding: 6px;
+                font-weight: bold;
+            }
+        """)
+        
+        window.showMaximized()
+        sys.exit(app.exec())
 
 if __name__ == "__main__":
     main()
