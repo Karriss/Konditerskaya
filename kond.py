@@ -199,8 +199,29 @@ class ConfectionerWindow(QMainWindow):
         self.tabs.addTab(self.order_tab, "Текущие заказы")
         self.tabs.addTab(self.confectioner_tab, "Кондитеры")
 
+        # Connect the tab change signal to the update function
+        self.tabs.currentChanged.connect(self.on_tab_changed)
+
         # Set the central widget
         self.setCentralWidget(self.tabs)
+    def on_tab_changed(self, index):
+
+        tab_text = self.tabs.tabText(index)
+        if tab_text == "Кондитеры":
+            logging.info("Кондитеры tab selected, updating confectioners data")
+            self.confectioner_tab.load_confectioners()
+        elif tab_text == "Текущие заказы":
+            logging.info("Текущие заказы tab selected, updating orders data")
+            self.order_tab.load_orders()
+def on_tab_changed(self, index):
+    """Reload data when a tab is changed."""
+    tab_text = self.tabs.tabText(index)
+    if tab_text == "Кондитеры":
+        logging.info("Кондитеры tab selected, updating confectioners data")
+        self.confectioner_tab.load_confectioners()
+    elif tab_text == "Текущие заказы":
+        logging.info("Текущие заказы tab selected, updating orders data")
+        self.order_tab.load_orders()
 class AddConfectionerDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -1013,9 +1034,8 @@ class ProductTab(QWidget):
                 cursor.execute(query, (current_month, current_year))
                 completed_orders = cursor.fetchall()
 
-            # Calculate the total sum of all orders
+             # Calculate the total sum of all orders
             total_sum = sum(order[2] for order in completed_orders)
-
             # Generate PDF
             pdf_filename = f"Отchet_zavershennye_zakazy_{current_year}_{current_month}.pdf"
             c = canvas.Canvas(pdf_filename, pagesize=letter)
@@ -1036,7 +1056,7 @@ class ProductTab(QWidget):
                 c.showPage()
                 y_position = 750
             c.drawString(100, y_position, f"Итоговая сумма: {total_sum:.2f}")
-
+            
             c.save()
             logging.info(f"Report generated: {pdf_filename}")
             QMessageBox.information(self, "Успех", f"Отчет успешно сформирован: {pdf_filename}")
@@ -1770,17 +1790,36 @@ class MainWindow(QMainWindow):
         self.completed_orders_tab = CompletedOrdersTab()
         self.order_tab = OrderTab(self.completed_orders_tab, None, "Админ")  # Pass role as "Админ"
         self.place_order_tab = PlaceOrderTab(self.order_tab)
-        self.Product_tab = ProductTab()
+        self.product_tab = ProductTab()
 
         # Add tabs to the tab widget
         self.tabs.addTab(self.confectioner_tab, "Кондитеры")
         self.tabs.addTab(self.order_tab, "Текущие заказы")
         self.tabs.addTab(self.completed_orders_tab, "Завершенные заказы")
         self.tabs.addTab(self.place_order_tab, "Оформить заказ")
-        self.tabs.addTab(self.Product_tab, "Товары")
+        self.tabs.addTab(self.product_tab, "Товары")
+
+        # Connect the tab change signal to the update function
+        self.tabs.currentChanged.connect(self.on_tab_changed)
 
         # Set the central widget
         self.setCentralWidget(self.tabs)
+
+    def on_tab_changed(self, index):
+        """Reload data when a tab is changed."""
+        tab_text = self.tabs.tabText(index)
+        if tab_text == "Кондитеры":
+            logging.info("Sales tab selected, updating sales data")
+            self.confectioner_tab.load_confectioners()
+        elif tab_text == "Текущие заказы":
+            logging.info("Products tab selected, updating product data")
+            self.order_tab.load_orders()
+        elif tab_text == "Завершенные заказы":
+            logging.info("Employees tab selected, updating employee data")
+            self.completed_orders_tab.load_completed_orders()
+        elif tab_text == "Товары":
+            logging.info("Categories tab selected, updating category data")
+            self.product_tab.load_products()
 class WelcomeDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
